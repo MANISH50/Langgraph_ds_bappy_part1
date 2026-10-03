@@ -13,6 +13,7 @@ Covered notebooks:
 - `8_Iterative_workflow.ipynb`
 - `Part2/1_Chatworkflow.ipynb`
 - `Part2/2_Chatworkflow.ipynb`
+- `Part2/3_MemoryPersist.ipynb`
 
 ---
 
@@ -1157,6 +1158,123 @@ With persistence:
 ```
 
 In LangGraph, persistence is usually done with a checkpointer.
+
+### 🚀 Part2/3_MemoryPersist notebook focus
+
+This notebook is about one of the most important LangGraph ideas: memory between runs.
+
+> A workflow is not just a sequence of nodes. It is also a stateful system that can remember past steps and continue later.
+
+#### Core concepts in this notebook
+
+- `InMemorySaver` creates a short-lived checkpointer that stores state in RAM.
+- `graph.compile(checkpointer=checkpointer)` turns the graph into a stateful workflow.
+- `config = {"configurable": {"thread_id": "1"}}` gives the workflow a stable conversation identity.
+- `workflow.invoke(..., config=config)` resumes or continues the same thread.
+- `workflow.get_state(config)` returns the latest checkpoint for that thread.
+- `list(workflow.get_state_history(config))` returns the full timeline of saved states.
+- Different `thread_id` values keep separate histories and avoid cross-user memory leakage.
+- The notebook introduces “time travel” by showing how a graph can inspect, fork, and resume from older checkpoints.
+
+#### Why this matters in real applications
+
+- A chatbot should remember previous messages.
+- A support workflow should keep the same customer state across retries.
+- A debugging pipeline should allow replay from a prior checkpoint.
+- A multi-user app must never mix one user’s state with another user’s thread.
+
+#### Memory and thread model
+
+```text
+Same thread_id  ------------------> same conversation / same memory timeline
+Different thread_id  --------------> separate conversation / separate memory
+```
+
+#### Advanced checkpoint flow
+
+```text
+thread_id = "1"
+      |
+      v
+workflow.invoke({"topic": "programming"}, config=config)
+      |
+      v
+InMemorySaver checkpoint
+      |
+      +--> latest state ------------------> workflow.get_state(config)
+      |
+      +--> saved history ----------------> workflow.get_state_history(config)
+      |
+      +--> prior checkpoint -------------> time travel + fork + resume
+```
+
+#### What makes this notebook important
+
+This notebook introduces the difference between:
+
+- stateless workflow: starts fresh every time
+- stateful workflow: remembers the previous run
+- checkpointed workflow: stores snapshots and can revisit them
+
+A real-world support bot is a perfect example:
+
+- User A asks about billing.
+- User B asks about password reset.
+- Both are using the same app.
+- If they share one state, the app becomes confused.
+- With `thread_id`, each conversation keeps its own checkpoint history.
+
+#### Time travel scenario
+
+A checkpoint is a saved moment in a workflow. It can be used to:
+
+- inspect what state existed before a node ran
+- debug the exact state that caused a bug
+- retry a node with a changed value
+- compare different branches without losing the original
+
+Example idea:
+
+```python
+history = list(workflow.get_state_history(config))
+checkpoint = next(
+    (snapshot for snapshot in history if "joke" in snapshot.next),
+    None,
+)
+```
+
+This means:
+
+- find the state right before the `joke` node executes
+- copy that checkpoint
+- update the topic
+- resume from that exact point
+
+That is the essence of time travel in LangGraph.
+
+#### Advanced execution scenarios
+
+1. Retry logic
+   - A node fails due to a temporary API issue.
+   - You recover from the previous checkpoint and rerun.
+
+2. A/B prompt testing
+   - One branch continues with the original topic.
+   - Another uses a new topic or reformulated prompt.
+
+3. Multi-user safety
+   - Each thread stays isolated.
+   - One consumer cannot see another consumer’s workflow state.
+
+4. Conversation continuity
+   - A user continues a conversation after a page refresh or restart.
+
+5. Debugging and audit trails
+   - Every saved checkpoint becomes a historical record of the workflow.
+
+#### Golden rule
+
+> Persist state when memory matters. Separate memory with `thread_id` when multiple users or workflows run at the same time.
 
 ### Why it matters
 
